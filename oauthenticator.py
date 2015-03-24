@@ -1,7 +1,7 @@
 """
-Custom Authenticator to use GitHub OAuth with JupyterHub
+Custom Authenticator to use GitLab OAuth with JupyterHub
 
-Most of the code c/o Kyle Kelley (@rgbkrk)
+Developed at BT by William Harmer (@harmer_will)
 """
 
 
@@ -20,12 +20,12 @@ from jupyterhub.utils import url_path_join
 
 from IPython.utils.traitlets import Unicode
 
-class GitHubMixin(OAuth2Mixin):
-    _OAUTH_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
-    _OAUTH_ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token"
+class GitLabMixin(OAuth2Mixin):
+    gitlab_host = Unicode(os.environ.get('GITLAB_HOST_URL', ''))
+    _OAUTH_AUTHORIZE_URL = "{0}/oauth/authorize".format(gitlab_host)
+    _OAUTH_ACCESS_TOKEN_URL = "{0}/oauth/token".format(gitlab_host)
 
-
-class GitHubLoginHandler(BaseHandler, GitHubMixin):
+class GitLabLoginHandler(BaseHandler, GitHubMixin):
     def get(self):
         guess_uri = '{proto}://{host}{path}'.format(
             proto=self.request.protocol,
@@ -41,12 +41,12 @@ class GitHubLoginHandler(BaseHandler, GitHubMixin):
         
         self.authorize_redirect(
             redirect_uri=redirect_uri,
-            client_id=self.authenticator.github_client_id,
+            client_id=self.authenticator.gitlab_client_id,
             scope=[],
             response_type='code')
 
 
-class GitHubOAuthHandler(BaseHandler):
+class GitLabOAuthHandler(BaseHandler):
     @gen.coroutine
     def get(self):
         # TODO: Check if state argument needs to be checked
@@ -60,13 +60,13 @@ class GitHubOAuthHandler(BaseHandler):
             raise web.HTTPError(403)
 
 
-class GitHubOAuthenticator(Authenticator):
+class GitLabOAuthenticator(Authenticator):
     
-    login_service = "GitHub"
+    login_service = "GitLab"
     oauth_callback_url = Unicode('', config=True)
-    github_client_id = Unicode(os.environ.get('GITHUB_CLIENT_ID', ''),
+    gitlab_client_id = Unicode(os.environ.get('GITLAB_CLIENT_ID', ''),
         config=True)
-    github_client_secret = Unicode(os.environ.get('GITHUB_CLIENT_SECRET', ''),
+    gitlab_client_secret = Unicode(os.environ.get('GITLAB_CLIENT_SECRET', ''),
         config=True)
     
     def login_url(self, base_url):
@@ -74,8 +74,8 @@ class GitHubOAuthenticator(Authenticator):
     
     def get_handlers(self, app):
         return [
-            (r'/oauth_login', GitHubLoginHandler),
-            (r'/oauth_callback', GitHubOAuthHandler),
+            (r'/oauth_login', GitLabLoginHandler),
+            (r'/oauth_callback', GitLabOAuthHandler),
         ]
     
     @gen.coroutine
@@ -86,18 +86,18 @@ class GitHubOAuthenticator(Authenticator):
         # TODO: Configure the curl_httpclient for tornado
         http_client = AsyncHTTPClient()
         
-        # Exchange the OAuth code for a GitHub Access Token
+        # Exchange the OAuth code for a GitLab Access Token
         #
-        # See: https://developer.github.com/v3/oauth/
+        # See: http://doc.gitlab.com/ce/api/oauth2.html
         
-        # GitHub specifies a POST request yet requires URL parameters
+        # GitLab specifies a POST request yet requires URL parameters
         params = dict(
-                client_id=self.github_client_id,
-                client_secret=self.github_client_secret,
+                client_id=self.gitlab_client_id,
+                client_secret=self.gitlab_client_secret,
                 code=code
         )
         
-        url = url_concat("https://github.com/login/oauth/access_token",
+        url = url_concat("{0}/oauth/token".format(gitlab_host),
                          params)
         
         req = HTTPRequest(url,
@@ -116,7 +116,7 @@ class GitHubOAuthenticator(Authenticator):
                  "User-Agent": "JupyterHub",
                  "Authorization": "token {}".format(access_token)
         }
-        req = HTTPRequest("https://api.github.com/user",
+        req = HTTPRequest("{0}/user".format(gitlab_host),
                           method="GET",
                           headers=headers
                           )
@@ -129,6 +129,6 @@ class GitHubOAuthenticator(Authenticator):
         raise gen.Return(username)
 
 
-class LocalGitHubOAuthenticator(LocalAuthenticator, GitHubOAuthenticator):
+class LocalGitLabOAuthenticator(LocalAuthenticator, GitLabOAuthenticator):
     """A version that mixes in local system user creation"""
     pass
